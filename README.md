@@ -1,75 +1,147 @@
-# RPC-Matlab-Simulation
-This MATLAB script simulates the dynamic response of a vehicle (quarter-car model) over a trapezoidal raised pedestrian crossing, analyzing displacement, velocity, acceleration, jerk, energy, power, wheel force, and frequency through Power Spectral Density (PSD).
+clc; clear; close all;
 
-README.txt  
-Raised Pedestrian Crossing (RPC) Simulation – MATLAB Code  
-Authors: Mauro Coni, Kevin Panetto, Enrico Giancaspro, Nicoletta Rassu, Francesca Maltinti  
-Affiliation: DICAAR, University of Cagliari  
+v = 10;    % Vehicle speed (m/s)
 
-Overview  
---------  
-This MATLAB script simulates the dynamic response of vehicles traversing Raised Pedestrian Crossings (RPCs) with varying geometric profiles and speeds. The simulation evaluates key mechanical parameters such as vertical displacement, acceleration, jerk, incident energy, dissipated power, and wheel force.  
+% Parameters of the AUDI A4 vehicle
+m = 300;  % Vehicle mass (kg)
+k = 50000; % Suspension stiffness (N/m)
+c = 3000;  % Suspension damping (N·s/m)
 
-The model is based on a quarter-car system and is intended to support the design of RPCs by quantifying their impact on vehicle dynamics and passenger comfort.  
+% Parameters of the ambulance vehicle
+% m = 900;  % Vehicle mass (kg)
+% k = 40000; % Suspension stiffness (N/m)
+% c = 4000;  % Suspension damping (N·s/m)
 
-Input Parameters  
-----------------  
-The following parameters can be modified within the script to simulate different conditions:  
+% Parameters of the BUS vehicle
+% m = 4000;  % Vehicle mass (kg)
+% k = 140000; % Suspension stiffness (N/m)
+% c = 10000;  % Suspension damping (N·s/m)
 
-1. **H** – Bump height (in meters)  
-   - Example: `H = [0.07, 0.10, 0.13, 0.16]`  
 
-2. **P** – Ramp slope (expressed as a decimal)  
-   - Example: `P = [0.05, 0.07, 0.09, 0.11]`  
-   - Ramp length is computed as `LR = H / P`  
+% Parameters of the trapezoidal bump
+H = 0.10;  % Bump height (m)
+LP = 10;   % Length of the elevated section (m)
+LR = 1.43; % Length of the ramps (m)
 
-3. **Vkm** – Vehicle speed (in km/h)  
-   - Example: `Vkm = [20, 30, 40, 50]`  
-   - Converted to m/s: `v = Vkm / 3.6`  
+% Simulation time
+t_end = 2;  
+dt = 0.001; 
+t = 0:dt:t_end;  
 
-4. **Vehicle Type** – Defines mass, stiffness, and damping  
-   - Passenger Car: `m = 300 kg`, `k = 30000 N/m`, `c = 3000 Ns/m`  
-   - Ambulance: tuned for reduced jerk  
-   - Heavy-Duty Vehicle (Fire Department): reinforced suspension  
+% Vehicle position
+x_vehicle = v * t;
 
-Simulation Settings  
--------------------  
-- **Simulation Time**: `t_end = 2.0 seconds`  
-- **Time Step**: `dt = 0.001 seconds`  
-- **Road Profile**: Trapezoidal bump with flat top and two ramps  
-- **Vehicle Model**: Quarter-car system  
+% Generation of the trapezoidal bump profile
+road_profile = zeros(size(x_vehicle));
 
-Outputs  
--------  
-The script generates the following outputs for each simulation run:  
+idx1 = (x_vehicle >= 0) & (x_vehicle < LR);
+idx2 = (x_vehicle >= LR) & (x_vehicle < LR + LP);
+idx3 = (x_vehicle >= LR + LP) & (x_vehicle < 2*LR + LP);
 
-1. **Vertical Displacement (z_vehicle)** – Vehicle body movement over RPC  
-2. **Vertical Velocity (vz_vehicle)** – Speed of vertical motion  
-3. **Vertical Acceleration (az_vehicle)** – Key indicator of ride comfort  
-4. **Vertical Jerk (jerk_vehicle)** – Rate of change of acceleration  
-5. **Incident Energy** – Energy absorbed by suspension system  
-6. **Dissipated Power** – Energy dissipated by damping  
-7. **Force on Wheel** – Total vertical force transmitted to the wheel  
-8. **Power Spectral Density (PSD)** – Frequency analysis of vertical response  
+road_profile(idx1) = H/LR * x_vehicle(idx1);
+road_profile(idx2) = H;
+road_profile(idx3) = H - H/LR * (x_vehicle(idx3) - (LP + LR));
 
-Output Format  
--------------  
-Results are written to a text file named `risultati_simulazione.txt` and visualized through plots generated during execution.  
+% Simulation of the vehicle response (mass-spring-damper model)
+z_vehicle = zeros(size(t));
+vz_vehicle = zeros(size(t));
+az_vehicle = zeros(size(t));  
+jerk_vehicle = zeros(size(t)); 
+incident_energy = zeros(size(t)); 
+dissipated_power = zeros(size(t)); 
+force_on_wheel = zeros(size(t)); 
 
-Usage  
------  
-To run the simulation:  
-1. Open the script in MATLAB.  
-2. Modify input parameters as needed.  
-3. Execute the script.  
-4. Review the output file and plots for analysis.  
+for i = 2:length(t)
+    F_spring = -k * (z_vehicle(i-1) - road_profile(i));
+    F_damper = -c * vz_vehicle(i-1);
+    F_total = F_spring + F_damper;
 
-License  
--------  
-This code is provided for academic and research purposes. Please cite the original authors when used in publications.  
+    az_vehicle(i) = F_total / m;
+    vz_vehicle(i) = vz_vehicle(i-1) + az_vehicle(i) * dt;
+    z_vehicle(i) = z_vehicle(i-1) + vz_vehicle(i) * dt;
 
-Contact  
--------  
-For questions or collaboration inquiries, contact:  
-Prof. Mauro Coni – mconi@unica.it 
+    jerk_vehicle(i) = (az_vehicle(i) - az_vehicle(i-1)) / dt;
+    incident_energy(i) = F_total * abs(z_vehicle(i) - z_vehicle(i-1));
+    dissipated_power(i) = c * vz_vehicle(i)^2;
+    force_on_wheel(i) = abs(F_spring) + abs(F_damper);
+end
 
+% Frequency analysis with PSD (Power Spectral Density)
+[psd_response, freq] = pwelch(z_vehicle, [], [], [], 1/dt);
+
+% Creation of the figure with a 3x3 grid
+figure;
+tiledlayout(3,3);
+
+% Road profile
+nexttile;
+plot(t, road_profile, 'r', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Road profile (m)');
+title('Road surface profile');
+grid on;
+
+% Vertical response
+nexttile;
+plot(t, z_vehicle, 'b', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Vertical response (m)');
+title('Vehicle vertical response');
+grid on;
+
+% Vertical jerk
+nexttile;
+plot(t, jerk_vehicle, 'g', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Vertical jerk (m/s^3)');
+title('Vehicle vertical jerk');
+grid on;
+
+% Frequency analysis with PSD (range 0 - 5 Hz)
+nexttile;
+plot(freq, psd_response, 'k', 'LineWidth', 2);
+xlim([0 5]); % Zoom on x-axis
+xlabel('Frequency (Hz)');
+ylabel('PSD (m^2/Hz)');
+title('Power Spectral Density (PSD) of vertical response');
+grid on;
+
+% Vertical speed
+nexttile;
+plot(t, vz_vehicle, 'm', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Vertical speed (m/s)');
+title('Vehicle vertical speed');
+grid on;
+
+% Vertical acceleration
+nexttile;
+plot(t, az_vehicle, 'c', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Vertical acceleration (m/s^2)');
+title('Vehicle vertical acceleration');
+grid on;
+
+% Incident energy
+nexttile;
+plot(t, incident_energy, 'y', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Incident energy (J)');
+title('Incident energy');
+grid on;
+
+% Dissipated power
+nexttile;
+plot(t, dissipated_power, 'k', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Dissipated power (W)');
+title('Dissipated power');
+grid on;
+
+% Force on the wheel
+nexttile;
+plot(t, force_on_wheel, 'b', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Force on the wheel (N)');
+title('Force on the wheel');
+grid on;
